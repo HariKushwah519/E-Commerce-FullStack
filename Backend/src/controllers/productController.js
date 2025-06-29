@@ -1,20 +1,20 @@
-const { default: mongoose } = require("mongoose");
+const mongoose = require("mongoose");
 const productModel = require("../models/productModel");
-const { isValid, isValidRating, isValidNumber } = require("./validator");
+const { isValid, isValidURL } = require("./validator");
 
-// Add Product
+// Add Products
 
 const addProduct = async (req, res) => {
   try {
     const productData = req.body;
 
     if (Object.keys(productData).length === 0) {
-      return res.status(400).json({ msg: "Bad Request, No Data Provided" });
+      return res.status(400).json({ msg: "Bad Request, No Data Provided!!!" });
     }
 
     const {
-      image,
-      name,
+      productImage,
+      productName,
       category,
       description,
       price,
@@ -22,21 +22,21 @@ const addProduct = async (req, res) => {
       isFreeDelivery,
     } = productData;
 
-    // Image Validation
+    // Product Image Validation
 
-    if (!isValid(image)) {
-      return res.status(400).json({ msg: "Image is Required" });
+    if (!isValid(productImage) || !isValidURL(productImage)) {
+      return res.status(400).json({ msg: "Valid Product Image is Required" });
     }
 
-    // Name Validation
+    // Product Name Validation
 
-    if (!isValid(name)) {
-      return res.status(400).json({ msg: "Name is required" });
+    if (!isValid(productName)) {
+      return res.status(400).json({ msg: "Product Name is required" });
     }
 
-    let duplicateName = await productModel.findOne({ name });
+    let duplicateName = await productModel.findOne({ productName });
     if (duplicateName) {
-      return res.status(400).json({ msg: "Name Already Exists" });
+      return res.status(400).json({ msg: "Product Already Exists" });
     }
 
     // Category Validation
@@ -45,14 +45,14 @@ const addProduct = async (req, res) => {
       return res.status(400).json({ msg: "Category is Required" });
     }
 
-    let validCategories = [
+    let validCategory = [
       "electronics",
       "clothing",
       "food",
       "books",
       "furniture",
     ];
-    if (!validCategories.includes(category.trim().toLowerCase())) {
+    if (!validCategory.includes(category.trim().toLowerCase())) {
       return res.status(400).json({
         msg: "Category must be 'electronics', 'clothing', 'food', 'books' and 'furniture' ",
       });
@@ -66,43 +66,50 @@ const addProduct = async (req, res) => {
 
     // Price Validation
 
-    if (!isValidNumber(price)) {
-      return res
-        .status(400)
-        .json({ msg: "Price is required and it must be a Positive Number" });
+    if (!isValid(price) || price < 0) {
+      return res.status(400).json({ msg: "Valid Price is Required" });
     }
 
     // Rating Validation
 
-    if (!isValidRating(ratings)) {
-      return res
-        .status(400)
-        .json({ msg: "Product Rating must be Between 1 and 5" });
+    if (!isValid(ratings) || ratings < 0 || ratings > 5) {
+      return res.status(400).json({ msg: "Valid Rating is Required" });
     }
 
-    // FreeDelivery Validation
+    // isFreeDelivery Validation
 
-    if (!isValid(isFreeDelivery)) {
-      return res.status(400).json({ msg: "Boolean Value is required" });
+    if (productData.hasOwnProperty(isFreeDelivery)) {
+      if (isFreeDelivery !== "boolean") {
+        return res
+          .status(400)
+          .json({ msg: "isFreeDelivery must be a Boolean Value " });
+      }
     }
 
-    const product = await productModel.create(productData);
+    const products = await productModel.create(productData);
     return res
       .status(201)
-      .json({ msg: "Product Data Addeds Successfully", product });
+      .json({ msg: "Product Data Added Successfully", products });
   } catch (error) {
     console.log(error);
 
-    return res.status(500).json({ msg: "Internal Server Error" });
+    return res.status(500).json({ msg: error.msg, error });
   }
 };
 
-// Get All Product 
+// Get All Products
 
 const getProducts = async (req, res) => {
   try {
-    let productData = await productModel.find();
-    return res.status(200).json({ productData });
+    const productData = await productModel.find();
+
+    if (productData.length === 0) {
+      return res.status(404).json({ msg: "No Product Found" });
+    }
+
+    return res
+      .status(200)
+      .json({ msg: "Products List", count: productData.length, productData });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ msg: "Internal server Error", error });
@@ -114,24 +121,95 @@ const getProducts = async (req, res) => {
 const getProductById = async (req, res) => {
   try {
     let productId = req.params.id;
-    let getProductById = await productModel.findById(productId);
-    return res.status(200).json({getProductById});
 
-    if (!getProductById) {
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ msg: "Invalid Product Id" });
+    }
+
+    const product = await productModel.findById(productId);
+
+    if (!product) {
       return res.status(404).json({ msg: "Product Not Found" });
     }
+
+    return res.status(200).json({ msg: "Product Found", product });
   } catch (error) {
     console.log(error);
 
-    return res.status(500).json({ msg: "Internal Server Error" });
+    return res.status(500).json({ msg: "Internal Server Error", error });
   }
 };
 
 // Get Product By Query
 
+const getProductsByQuery = async (req, res) => {
+  try {
+    let {
+      productName,
+      category,
+      minPrice,
+      maxPrice,
+      minRating,
+      maxRating,
+      isFreeDelivery,
+    } = req.query;
 
+    if (Object.keys(req.query).length === 0) {
+      return res
+        .status(400)
+        .json({ msg: "Please provide at least one query parameter" });
+    }
 
+    let filter = {};
 
+    if (productName) {
+      filter.productName = { $regex: productName, $options: "i" };
+    }
+
+    if (category) {
+      filter.category = category.toLowerCase();
+    }
+
+    if (typeof minPrice !== "undefined" || typeof maxPrice !== "undefined") {
+      filter.price = {};
+      if (typeof minPrice !== "undefined") filter.price.$gte = Number(minPrice);
+      if (typeof maxPrice !== "undefined") filter.price.$lte = Number(maxPrice);
+    }
+
+    if (typeof minRating !== "undefined" || typeof maxRating !== "undefined") {
+      filter.ratings = {};
+      if (typeof minRating !== "undefined")
+        filter.ratings.$gte = Number(minRating);
+      if (typeof maxRating !== "undefined")
+        filter.ratings.$lte = Number(maxRating);
+    }
+
+    if (typeof isFreeDelivery !== "undefined") {
+      if (isFreeDelivery === "true") filter.isFreeDelivery = true;
+      else if (isFreeDelivery === "false") filter.isFreeDelivery = false;
+      else {
+        return res.status(400).json({
+          msg: "Invalid value for isFreeDelivery.Use 'true' or 'false'.",
+        });
+      }
+    }
+
+    const products = await productModel.find(filter);
+
+    if (products.length === 0) {
+      return res.status(200).json({ msg: "No Products Match Your Query" });
+    }
+
+    return res.status(200).json({
+      msg: "Filtered Products",
+      count: products.length,
+      products,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ msg: "Internal Server Error", error });
+  }
+};
 
 // Update Product
 
@@ -145,32 +223,45 @@ const updateProduct = async (req, res) => {
     }
 
     if (Object.keys(data).length === 0) {
-      return res.status(400).json({ msg: "Bad Request, No Data Provided" });
+      return res.status(400).json({ msg: "No Data Provided for update" });
     }
 
-    let { image, name, category, description, price, ratings, isFreeDelivery } = data;
+    const {
+      productImage,
+      productName,
+      category,
+      description,
+      price,
+      ratings,
+      isFreeDelivery,
+    } = data;
+
+    const updateData = {};
 
     // Validate Image
-    if (image !== undefined) {
-      if (!isValid(image)) {
-        return res.status(400).json({ msg: "Image is Required" });
+    if (productImage) {
+      if (!isValid(productImage) || !isValidURL(productImage)) {
+        return res.status(400).json({ msg: "Valid Product Image is Required" });
       }
+      updateData.productImage = productImage;
     }
 
     // Validate Name
-    if (name !== undefined) {
-      if (!isValid(name)) {
-        return res.status(400).json({ msg: "Name is required" });
+    if (productName) {
+      if (!isValid(productName)) {
+        return res.status(400).json({ msg: "Product Name is required" });
       }
 
-      let duplicateName = await productModel.findOne({ name });
-        if (duplicateName) {
-      return res.status(400).json({ msg: "Name Already Exists" });
+      const duplicateProduct = await productModel.findOne({ productName });
+      if (duplicateProduct) {
+        return res.status(409).json({ msg: "Product Name already exists" });
       }
+
+      updateData.productName = productName;
     }
 
     // Validate Category
-    if(category !== undefined) {
+    if (category) {
       if (!isValid(category)) {
         return res.status(400).json({ msg: "Category is Required" });
       }
@@ -182,78 +273,82 @@ const updateProduct = async (req, res) => {
         "books",
         "furniture",
       ];
-    if (!validCategories.includes(category.trim().toLowerCase())) {
-      return res.status(400).json({
-        msg: "Category must be 'electronics', 'clothing', 'food', 'books' and 'furniture' ",
-      });
-    }
+      if (!validCategories.includes(category.trim().toLowerCase())) {
+        return res.status(400).json({
+          msg: "Category must be 'electronics', 'clothing', 'food', 'books' and 'furniture' ",
+        });
+      }
+      updateData.category = validCategories;
     }
 
     // Validate Description
-    if (description !== undefined) {
+    if (description) {
       if (!isValid(description)) {
         return res.status(400).json({ msg: "Description is required" });
       }
+      updateData.description = description;
     }
 
     // Validate Price
-    if (price !== undefined) {
-      if (!isValidNumber(price)) {
-        return res
-          .status(400)
-          .json({ msg: "Price is required and it must be a Positive Number" });
+    if (price) {
+      if (!isValid(price) || price < 0) {
+        return res.status(400).json({ msg: "Valid Price is Required" });
       }
+      updateData.price = priceNum;
     }
 
     // Validate Ratings
-    if (ratings !== undefined) {
-      if (!isValidRating(ratings)) {
-        return res
-          .status(400)
-          .json({ msg: "Product Rating must be Between 1 and 5" });
+    if (ratings) {
+      if (!isValid(ratings) || ratings < 0 || ratings > 5) {
+        return res.status(400).json({ msg: "Valid Rating is Required" });
       }
     }
 
     // Validate FreeDelivery
-    if (isFreeDelivery !== undefined) {
-      if (!isValid(isFreeDelivery)) {
-        return res.status(400).json({ msg: "Boolean Value is required" });
+    if (typeof isFreeDelivery !== "undefined") {
+      if (typeof isFreeDelivery !== "boolean") {
+        return res.status(400).json({
+          msg: "isFreeDelivery must be a boolean (true or false)",
+        });
       }
+      updateData.isFreeDelivery = isFreeDelivery;
     }
 
-    const update = await productModel.findByIdAndUpdate(
-          productId,
-          { image, name, category, description, price, ratings, isFreeDelivery },
-          { new: true }
-        );
-    
-        if (!update) {
-          return res.status(404).json({ msg: "No Product Found" });
-        }
-        return res
-          .status(200)
-          .json({ msg: "Product Data Updated Successfully", update });
-      } catch (error) {
-        console.log(error);
-        return res.status(500).json({ msg: "Internal Server Error" });
-      }
-    };
+    const update = await productModel.findByIdAndUpdate(productId, updateData, {
+      new: true,
+    });
 
-// Delete Product 
+    return res
+      .status(200)
+      .json({ msg: "Product Updated Successfully", update });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ msg: "Internal Server Error", error });
+  }
+};
+
+// Delete Product
 
 const deleteProduct = async (req, res) => {
   try {
     const productId = req.params.id;
 
-    const deleteProductById = await productModel.findByIdAndDelete(productId);
-    if (!deleteProductById) {
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ msg: "Invalid Product ID" });
+    }
+
+    const product = await productModel.findById(productId);
+    if (!product) {
       return res.status(404).json({ msg: "Product Not Found" });
     }
-    return res.status(200).json({ msg: "Product Data Deleted Succesfully" });
+
+    await productModel.findByIdAndDelete(productId);
+    return res.status(200).json({ msg: "Product deleted successfully" });
   } catch (error) {
     console.log(error);
-
-    return res.status(500).json({ msg: "Internal Server Error" });
+    return res
+      .status(500)
+      .json({ msg: "Internal Server Error", error: error.message });
   }
 };
 
@@ -261,6 +356,7 @@ module.exports = {
   addProduct,
   getProducts,
   getProductById,
+  getProductsByQuery,
   updateProduct,
   deleteProduct,
 };

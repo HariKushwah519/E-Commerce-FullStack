@@ -74,7 +74,6 @@ const addUsers = async (req, res) => {
         .json({ msg: "Gender must be 'male', 'female' and 'Other'" });
     }
 
-    // Password Validation
     if (!isValid(password)) {
       return res.status(400).json({ msg: "Password is Required" });
     }
@@ -136,7 +135,9 @@ const updateUser = async (req, res) => {
 
     let loggedInUserId = req.user.userId;
     if (userId !== loggedInUserId) {
-      return res.status(403).json({msg: "Bad Authrization!!! Invalid Token!" });
+      return res
+        .status(403)
+        .json({ msg: "Bad Authrization!!! Invalid Token!" });
     }
 
     if (Object.keys(data).length === 0) {
@@ -283,7 +284,9 @@ const deleteUser = async (req, res) => {
 
     let loggedInUserId = req.user.userId;
     if (userId !== loggedInUserId) {
-      return res.status(403).json({msg: "Bad Authrization!!! Invalid Token!" });
+      return res
+        .status(403)
+        .json({ msg: "Bad Authrization!!! Invalid Token!" });
     }
 
     const user = await userModel.findById(userId);
